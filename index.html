@@ -183,7 +183,7 @@
         </div>
     </div>
 
-    <!-- ==================== Data Sheet (動態讀取 IndexedDB 紀錄) ==================== -->
+    <!-- ==================== Data Sheet ==================== -->
     <div id="data" class="screen">
         <div class="card">
             <h3>Data Sheet from Server</h3>
@@ -249,10 +249,8 @@
     (function() {
         'use strict';
 
-        // 0. 請替換為您的 Google Apps Script Web App URL
         const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycby4kKkWvgep-Ba24wJA7oDRtEAVzhHMZOMOR2ykgMC412_-ji0cXSk8xMe8Wy0Q8jxMgA/exec'; 
 
-        // 1. IndexedDB 配置與工具
         const DB_NAME = 'AEL_MaintenanceDB';
         const DB_VERSION = 2;
         const STORES = {
@@ -345,7 +343,6 @@
             return await response.json();
         }
 
-        // 2. 頁面切換工具
         function showPage(pageId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             const el = document.getElementById(pageId);
@@ -365,7 +362,6 @@
         }
         window.showPage = showPage;
 
-        // 3. Service 頁面邏輯
         let currentSite = '';
         let currentMachine = '';
 
@@ -463,7 +459,6 @@
             }
         };
 
-        // 4. QR 掃描器
         let qrScanner = null;
         let isQrScanning = false;
 
@@ -551,7 +546,6 @@
             }
         };
 
-        // 5. 相機與 Confirm（優先嘗試連線，連線失敗則存本地）
         window.prepareAndShowCamera = function() {
             const siteSelect = document.getElementById('siteSelect');
             const machineSelect = document.getElementById('machineSelect');
@@ -608,7 +602,6 @@
             if (!dataUrl) { alert('No photo to confirm.'); return; }
 
             const timestamp = new Date().toISOString();
-            
             const payload = {
                 action: 'uploadPhoto',
                 site: currentSite,
@@ -617,12 +610,9 @@
                 timestamp: timestamp
             };
 
-            // 1. 先嘗試發送上傳請求至 Google Apps Script
             try {
                 const res = await sendToGAS(payload);
-
                 if (res.status === 'success') {
-                    // 上傳成功：存入 IndexedDB 並標記 synced: true
                     await addRecord(STORES.photos, {
                         site: currentSite,
                         machine: currentMachine,
@@ -631,16 +621,12 @@
                         timestamp: timestamp,
                         synced: true
                     });
-
                     alert('✅ 照片已成功上傳至 Google Drive 與 Google Sheets！');
                 } else {
                     throw new Error(res.message || 'Server response error');
                 }
-
             } catch (err) {
-                // 2. 網絡問題或伺服器連線失敗：備份至本地並跳提示
                 console.warn('Network upload failed, caching locally instead:', err);
-
                 await addRecord(STORES.photos, {
                     site: currentSite,
                     machine: currentMachine,
@@ -648,8 +634,7 @@
                     timestamp: timestamp,
                     synced: false
                 });
-
-                alert('⚠️ 目前網路無回應或處於離線狀態！\n照片已先安全儲存在手機本地庫中。連線後可於 Settings 點擊「☁️ Sync to Cloud」進行同步。');
+                alert('⚠️ 目前網路無回應或處於離線狀態！\n照片已先安全儲存在手機本地庫中。');
             }
 
             localStorage.removeItem('capturedPhoto');
@@ -657,7 +642,6 @@
             showPage('data');
         };
 
-        // 6. 照片庫
         window.uploadPhoto = function() {
             document.getElementById('fileInput').click();
         };
@@ -718,7 +702,6 @@
         }
         window.refreshPhotoLibrary = refreshPhotoLibrary;
 
-        // 7. Data Sheet（讀取 IndexedDB 紀錄與單筆同步）
         async function refreshDataSheet() {
             const siteSelect = document.getElementById('siteSelect');
             const machineSelect = document.getElementById('machineSelect');
@@ -728,7 +711,6 @@
             document.getElementById('dataSheetSite').textContent = currentSite || '(none)';
             document.getElementById('dataSheetMachine').textContent = currentMachine || '(none)';
 
-            // 動態讀取 IndexedDB photos
             const recordContainer = document.getElementById('maintenanceRecordList');
             recordContainer.innerHTML = '';
 
@@ -739,7 +721,6 @@
                 return;
             }
 
-            // 排列為由新到舊
             photos.slice().reverse().forEach(record => {
                 const card = document.createElement('div');
                 card.className = 'record';
@@ -757,9 +738,7 @@
                     <div class="meta">📅 ${formattedDate} · 🕒 ${formattedTime}</div>
                 `;
 
-                // 點擊觸發單筆同步
                 card.onclick = () => syncSingleRecord(record);
-
                 recordContainer.appendChild(card);
             });
         }
@@ -807,7 +786,6 @@
             }
         }
 
-        // 8. 批次同步功能 (Settings 頁面)
         window.syncAllToCloud = async function() {
             const photos = await getAllRecords(STORES.photos);
             const unsyncedPhotos = photos.filter(p => !p.synced);
@@ -850,7 +828,6 @@
             }
         };
 
-        // 9. 清除所有本地數據
         window.clearAllData = function() {
             if (!confirm('⚠️ 這將永久刪除本地所有數據，確定嗎？')) return;
             Promise.all([
@@ -867,7 +844,6 @@
             .catch(err => alert('❌ 清除失敗：' + err.message));
         };
 
-        // 10. 初始化
         openDB()
             .then(() => {
                 refreshServiceSelects();
