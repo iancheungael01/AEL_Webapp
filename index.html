@@ -3,27 +3,32 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>AEL Maintenance SPA (Google Apps Script + IndexedDB)</title>
-    <!-- QR Code scanning library -->
+    <title>AEL Maintenance SPA (Offline PWA + IndexedDB)</title>
+
+    <!-- 
+      NOTE: QR Code library is loaded from CDN. 
+      The Service Worker will cache this file on first load so it works offline.
+    -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
     <style>
-        /* ===== 全局重置 & 手機框架 ===== */
+        /* ===== Global Resets & Mobile Layout ===== */
         * { box-sizing: border-box; }
         body { margin:0; background:#e5e7eb; font-family:'Segoe UI',sans-serif; display:flex; justify-content:center; min-height:100vh; padding:10px 0; }
         .phone { width:430px; max-width:100%; padding:20px 16px; }
 
-        /* ===== 頁面切換 ===== */
+        /* ===== Screen Navigation ===== */
         .screen { display:none; }
         .screen.active { display:block; }
 
-        /* ===== 卡片 & 輸入 ===== */
+        /* ===== Cards & Inputs ===== */
         .card { background:#fff; border-radius:16px; padding:16px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.05); }
         .card h3 { margin-top:0; margin-bottom:12px; font-weight:600; font-size:1.1rem; }
         .input { width:100%; padding:14px; box-sizing:border-box; border:1px solid #ccc; border-radius:10px; margin:6px 0; font-size:14px; background:#fff; color:#000; }
         .input:focus { outline:2px solid #02021f; border-color:transparent; }
         select.input option { color:#000; background:#fff; }
 
-        /* ===== 按鈕 ===== */
+        /* ===== Buttons ===== */
         .btn { width:100%; padding:14px; border:none; border-radius:12px; font-size:14px; font-weight:600; cursor:pointer; transition:opacity 0.2s; text-align:center; }
         .btn:active { opacity:0.7; }
         .primary { background:#02021f; color:#fff; }
@@ -33,40 +38,30 @@
         .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
         .grid2 .btn { width:100%; }
 
-        /* ===== 記錄卡片 ===== */
+        /* ===== Record Cards ===== */
         .record { background:#eef0f3; padding:12px; border-radius:10px; margin:8px 0; font-size:14px; line-height:1.5; cursor:pointer; transition:background-color 0.2s; }
         .record:hover { background:#e2e8f0; }
         .record .meta { color:#4b5563; font-size:13px; margin-top:4px; }
 
-        /* ===== 圖片/影片 ===== */
+        /* ===== Media Elements ===== */
         img, video { width:100%; border-radius:12px; object-fit:cover; background:#ddd; }
 
-        /* ===== 照片庫網格 ===== */
+        /* ===== Photo Gallery ===== */
         .photo-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px; }
         .photo-grid .thumb { aspect-ratio:1/1; border-radius:8px; background:#e5e7eb; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; border:1px solid #ddd; position:relative; }
         .photo-grid .thumb img { width:100%; height:100%; object-fit:cover; }
         .photo-grid .thumb .info-badge { position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.6); color:#fff; font-size:10px; padding:4px 6px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-        /* ===== QR Reader Container ===== */
-        #qr-reader {
-            background: #000;
-            min-height: 240px;
-            border-radius: 12px;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-        }
-        #qr-reader video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-
+        /* ===== Scanner UI ===== */
+        #qr-reader { background: #000; min-height: 240px; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
+        #qr-reader video { width: 100%; height: 100%; object-fit: cover; display: block; }
         .qr-control { margin-top: 12px; display: flex; gap: 10px; }
         .qr-control .btn { flex: 1; }
+
+        /* Status Badge for Connectivity */
+        .status-badge { font-size: 12px; padding: 4px 8px; border-radius: 6px; float: right; font-weight: normal; }
+        .status-online { background: #d1fae5; color: #065f46; }
+        .status-offline { background: #fee2e2; color: #991b1b; }
 
         @media (max-width:480px) { .phone { padding:10px 8px; } }
     </style>
@@ -74,8 +69,12 @@
 <body>
 <div class="phone">
 
-    <!-- ==================== 主頁 ==================== -->
+    <!-- ==================== HOME SCREEN ==================== -->
     <div id="home" class="screen active">
+        <div style="margin-bottom:12px;">
+            <span id="networkStatus" class="status-badge status-online">🌐 Online</span>
+            <h2 style="margin:0;">AEL Maintenance</h2>
+        </div>
         <button class="btn primary" onclick="showPage('service')">Service</button>
         <br><br>
         <button class="btn secondary" onclick="showPage('clockin')">Clock‑in</button>
@@ -83,7 +82,7 @@
         <button class="btn warning" onclick="showPage('settings')">⚙️ Settings</button>
     </div>
 
-    <!-- ==================== Clock‑in ==================== -->
+    <!-- ==================== CLOCK-IN SCREEN ==================== -->
     <div id="clockin" class="screen">
         <div class="card">
             <h3>Technician Clock‑in</h3>
@@ -98,16 +97,16 @@
         </div>
     </div>
 
-    <!-- ==================== Service ==================== -->
+    <!-- ==================== SERVICE SCREEN ==================== -->
     <div id="service" class="screen">
         <div class="card">
             <h3>QR Scanner</h3>
             <div id="qr-reader"></div>
             <div class="qr-control">
-                <button id="qrControlBtn" class="btn primary" onclick="restartQrScanner()">⟳ 重啟掃描</button>
+                <button id="qrControlBtn" class="btn primary" onclick="restartQrScanner()">⟳ Restart Scan</button>
             </div>
             <p style="font-size:12px; color:#666; margin-top:8px;">
-                掃描 QR Code，內容格式為 <code>Project site, Machine</code>
+                Scan QR Code with format: <code>Project site, Machine</code>
             </p>
         </div>
                 
@@ -133,7 +132,7 @@
         </div>
     </div>
 
-    <!-- ==================== Camera ==================== -->
+    <!-- ==================== CAMERA SCREEN ==================== -->
     <div id="camera" class="screen">
         <div class="card">
             <h3>Camera</h3>
@@ -151,7 +150,7 @@
         </div>
     </div>
 
-    <!-- ==================== Confirm ==================== -->
+    <!-- ==================== CONFIRM SCREEN ==================== -->
     <div id="confirm" class="screen">
         <div class="card">
             <h3>Photo Preview</h3>
@@ -168,11 +167,11 @@
         </div>
     </div>
 
-    <!-- ==================== Library ==================== -->
+    <!-- ==================== LIBRARY SCREEN ==================== -->
     <div id="library" class="screen">
         <div class="card">
             <h3>Photo Library</h3>
-            <button class="btn primary" onclick="uploadPhoto()">📤 Upload Photo</button>
+            <button class="btn primary" onclick="uploadPhoto()">📤 Upload File</button>
             <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFileUpload(event)">
             <div id="photoGrid" class="photo-grid"></div>
             <p id="libraryEmpty" style="color:#6b7280; text-align:center;">No photos saved yet.</p>
@@ -183,18 +182,16 @@
         </div>
     </div>
 
-    <!-- ==================== Data Sheet ==================== -->
+    <!-- ==================== DATA SHEET SCREEN ==================== -->
     <div id="data" class="screen">
         <div class="card">
-            <h3>Data Sheet from Server</h3>
+            <h3>Data Sheet</h3>
             <p><strong>Location (Site):</strong> <span id="dataSheetSite">(none)</span></p>
             <p><strong>Machine:</strong> <span id="dataSheetMachine">(none)</span></p>
-            <p>Project ID: PRJ-2026-001</p>
-            <p>Machine ID: EV-CH-001</p>
-            <p>Status: Active</p>
         </div>
         <div class="card">
-            <h3>Maintenance Records (點擊卡片可單筆同步)</h3>
+            <h3>Maintenance Records</h3>
+            <p style="font-size:12px; color:#6b7280;">Click an unsynced item to upload individually.</p>
             <div id="maintenanceRecordList"></div>
         </div>
         <div class="grid2">
@@ -203,7 +200,7 @@
         </div>
     </div>
 
-    <!-- ==================== Checklist ==================== -->
+    <!-- ==================== CHECKLIST SCREEN ==================== -->
     <div id="checklist" class="screen">
         <div class="card">
             <h3>Checklist</h3>
@@ -217,7 +214,7 @@
         </div>
     </div>
 
-    <!-- ==================== Saved ==================== -->
+    <!-- ==================== SAVED SCREEN ==================== -->
     <div id="saved" class="screen">
         <div class="card">
             <h2>Checklist Saved ✓</h2>
@@ -225,23 +222,24 @@
         </div>
     </div>
 
-  <!-- ==================== Settings ==================== -->
+    <!-- ==================== SETTINGS SCREEN ==================== -->
     <div id="settings" class="screen">
         <div class="card">
             <h3>⚙️ Settings</h3>
-            <p style="color:#4b5563;">Manage all stored data in this app.</p>
-    
-            <!-- New Text Confirmation Input Block -->
+            <p style="color:#4b5563; font-size:14px;">Manage all stored data in this app.</p>
+            
+            <button class="btn primary" onclick="syncAllToCloud()" style="margin-bottom:16px;">☁️ Sync Unsynced Records to Cloud</button>
+
+            <hr style="border:0; border-top:1px solid #eee; margin:16px 0;">
+
+            <!-- NOTE: Command-line style confirmation input for safety -->
             <div style="margin-bottom: 12px;">
                 <label for="clearConfirmInput" style="font-size:13px; color:#374151; font-weight:600; display:block; margin-bottom:4px;">
-                    Type <code>/clear-all</code> to confirm:
+                    Type <code>/clear-all</code> to confirm wipe:
                 </label>
                 <input id="clearConfirmInput" class="input" type="text" placeholder="Type /clear-all here..." autocomplete="off">
-                <button class="btn danger" onclick="clearAllData()" style="margin-top:8px;">🗑️ Clear All Data</button>
+                <button class="btn danger" onclick="clearAllData()" style="margin-top:8px;">🗑️ Clear All Local Data</button>
             </div>
-    
-            <button class="btn primary" onclick="syncAllToCloud()" style="margin-top:10px;">☁️ Sync to Cloud</button>
-            <p style="font-size:12px; color:#9ca3af; margin-top:12px;">This will permanently delete all project sites, machines, and photos locally once cleared.</p>
         </div>
         <div class="grid2">
             <button class="btn secondary" onclick="showPage('home')">Back to Home</button>
@@ -252,14 +250,29 @@
 </div>
 
 <!-- ============================================================ -->
-<!-- JavaScript 核心                                               -->
+<!-- JAVASCRIPT LOGIC                                             -->
 <!-- ============================================================ -->
 <script>
+    /*
+      NOTE 1: SERVICE WORKER REGISTRATION
+      Registers sw.js located at the root directory.
+      This allows the browser to cache static assets (HTML/JS/CDN) for offline use.
+    */
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('✅ Service Worker registered with scope:', reg.scope))
+                .catch(err => console.error('❌ Service Worker registration failed:', err));
+        });
+    }
+
     (function() {
         'use strict';
 
+        // NOTE 2: Configure your published Google Apps Script Web App URL here
         const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycby4kKkWvgep-Ba24wJA7oDRtEAVzhHMZOMOR2ykgMC412_-ji0cXSk8xMe8Wy0Q8jxMgA/exec'; 
 
+        // NOTE 3: INDEXEDDB CONFIGURATION
         const DB_NAME = 'AEL_MaintenanceDB';
         const DB_VERSION = 2;
         const STORES = {
@@ -270,6 +283,7 @@
 
         let db = null;
 
+        // Initialize / Upgrade IndexedDB
         function openDB() {
             return new Promise((resolve, reject) => {
                 if (db) { resolve(db); return; }
@@ -295,6 +309,7 @@
             });
         }
 
+        // Generic IndexedDB CRUD Helpers
         function addRecord(storeName, data) {
             return openDB().then(db => {
                 return new Promise((resolve, reject) => {
@@ -343,6 +358,7 @@
             });
         }
 
+        // Send JSON data to Google Apps Script via POST
         async function sendToGAS(payload) {
             const response = await fetch(GAS_WEB_APP_URL, {
                 method: 'POST',
@@ -352,10 +368,12 @@
             return await response.json();
         }
 
+        // Navigation Controller
         function showPage(pageId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             const el = document.getElementById(pageId);
             if (el) el.classList.add('active');
+            
             if (pageId === 'service') {
                 refreshServiceSelects();
                 startQrScanner();
@@ -374,6 +392,7 @@
         let currentSite = '';
         let currentMachine = '';
 
+        // Dropdown Synchronizer
         async function refreshServiceSelects(selectedSite, selectedMachine) {
             const sites = await getAllRecords(STORES.sites);
             const machines = await getAllRecords(STORES.machines);
@@ -439,12 +458,10 @@
 
             try {
                 const res = await sendToGAS({ action: 'addSite', siteName: val });
-                if (res.status === 'success') {
-                    alert('✅ Site added to Google Sheets and local cache.');
-                }
+                if (res.status === 'success') alert('✅ Site added to Google Sheets.');
             } catch (err) {
-                console.warn('Cloud add failed, saved locally.', err);
-                alert('⚠️ Saved locally (offline). Will sync later via Settings.');
+                console.warn('Network issue; saved locally.', err);
+                alert('⚠️ Saved locally (Offline mode).');
             }
         };
 
@@ -459,22 +476,21 @@
 
             try {
                 const res = await sendToGAS({ action: 'addMachine', machineName: val, siteName: currentSite });
-                if (res.status === 'success') {
-                    alert('✅ Machine added to Google Sheets and local cache.');
-                }
+                if (res.status === 'success') alert('✅ Machine added to Google Sheets.');
             } catch (err) {
-                console.warn('Cloud add failed, saved locally.', err);
-                alert('⚠️ Saved locally (offline). Will sync later via Settings.');
+                console.warn('Network issue; saved locally.', err);
+                alert('⚠️ Saved locally (Offline mode).');
             }
         };
 
+        // QR Code Logic
         let qrScanner = null;
         let isQrScanning = false;
 
         function updateQrButton() {
             const btn = document.getElementById('qrControlBtn');
             if (!btn) return;
-            btn.textContent = isQrScanning ? '⟳ 重啟掃描' : '▶ 啟動掃描';
+            btn.textContent = isQrScanning ? '⟳ Restart Scan' : '▶ Start Scanner';
         }
 
         async function ensureSiteExists(siteName) {
@@ -522,7 +538,7 @@
                             await refreshServiceSelects(site, machine);
                             currentSite = site;
                             currentMachine = machine;
-                            alert(`✅ 已填入：\n站點：${site}\n機器：${machine}`);
+                            alert(`✅ Scanned:\nSite: ${site}\nMachine: ${machine}`);
                         }
                     }
                     if (document.getElementById('service').classList.contains('active')) {
@@ -555,6 +571,7 @@
             }
         };
 
+        // Camera Logic
         window.prepareAndShowCamera = function() {
             const siteSelect = document.getElementById('siteSelect');
             const machineSelect = document.getElementById('machineSelect');
@@ -596,16 +613,19 @@
             canvas.width = video.videoWidth || 640;
             canvas.height = video.videoHeight || 480;
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // NOTE 4: Compress image (0.7 quality JPEG) to save IndexedDB memory
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
             localStorage.setItem('capturedPhoto', dataUrl);
+            
             document.getElementById('confirmPhotoPreview').src = dataUrl;
-
             document.getElementById('confirmSiteDisplay').textContent = currentSite || '(none)';
             document.getElementById('confirmMachineDisplay').textContent = currentMachine || '(none)';
 
             showPage('confirm');
         };
 
+        // NOTE 5: PHOTO CONFIRMATION & OFFLINE-FIRST STRATEGY
         window.confirmPhoto = async function() {
             const dataUrl = localStorage.getItem('capturedPhoto');
             if (!dataUrl) { alert('No photo to confirm.'); return; }
@@ -622,20 +642,22 @@
             try {
                 const res = await sendToGAS(payload);
                 if (res.status === 'success') {
+                    // Saved to cloud directly
                     await addRecord(STORES.photos, {
                         site: currentSite,
                         machine: currentMachine,
                         photoBase64: dataUrl,
-                        photoUrl: res.photoUrl,
+                        photoUrl: res.photoUrl || '',
                         timestamp: timestamp,
                         synced: true
                     });
-                    alert('✅ 照片已成功上傳至 Google Drive 與 Google Sheets！');
+                    alert('✅ Photo successfully synced to Google Drive & Sheet!');
                 } else {
-                    throw new Error(res.message || 'Server response error');
+                    throw new Error(res.message || 'Server error');
                 }
             } catch (err) {
-                console.warn('Network upload failed, caching locally instead:', err);
+                console.warn('Network unavailable, storing locally:', err);
+                // Save locally marked as synced: false
                 await addRecord(STORES.photos, {
                     site: currentSite,
                     machine: currentMachine,
@@ -643,7 +665,7 @@
                     timestamp: timestamp,
                     synced: false
                 });
-                alert('⚠️ 目前網路無回應或處於離線狀態！\n照片已先安全儲存在手機本地庫中。');
+                alert('⚠️ Offline Mode: Saved safely to local IndexedDB storage.');
             }
 
             localStorage.removeItem('capturedPhoto');
@@ -726,7 +748,7 @@
             const photos = await getAllRecords(STORES.photos);
 
             if (!photos || photos.length === 0) {
-                recordContainer.innerHTML = '<p style="color:#6b7280; font-size:13px; text-align:center;">目前沒有維護紀錄</p>';
+                recordContainer.innerHTML = '<p style="color:#6b7280; font-size:13px; text-align:center;">No records stored</p>';
                 return;
             }
 
@@ -735,15 +757,15 @@
                 card.className = 'record';
 
                 const syncBadge = record.synced 
-                    ? '<span style="color:#10b981; font-weight:bold;">[ 已同步 ☁️ ]</span>' 
-                    : '<span style="color:#ef4444; font-weight:bold;">[ 未同步 ⚠️ 點擊同步 ]</span>';
+                    ? '<span style="color:#10b981; font-weight:bold;">[ Synced ☁️ ]</span>' 
+                    : '<span style="color:#ef4444; font-weight:bold;">[ Unsynced ⚠️ Click to sync ]</span>';
 
                 const dateObj = record.timestamp ? new Date(record.timestamp) : new Date();
                 const formattedDate = dateObj.toLocaleDateString();
                 const formattedTime = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                 card.innerHTML = `
-                    <div><strong>${record.site || '未指定站點'}</strong> - ${record.machine || '未指定機器'} ${syncBadge}</div>
+                    <div><strong>${record.site || 'Unspecified Site'}</strong> - ${record.machine || 'Unspecified Machine'} ${syncBadge}</div>
                     <div class="meta">📅 ${formattedDate} · 🕒 ${formattedTime}</div>
                 `;
 
@@ -754,17 +776,14 @@
 
         async function syncSingleRecord(record) {
             if (record.synced) {
-                alert('ℹ️ 這筆紀錄已經同步至 Google 雲端，無需重複上傳。');
+                alert('ℹ️ Record already synced to cloud.');
                 return;
             }
 
-            if (!confirm(`確定要同步這筆紀錄嗎？\n站點：${record.site || '無'}\n機器：${record.machine || '無'}`)) {
-                return;
-            }
+            if (!confirm(`Sync this record?\nSite: ${record.site || 'N/A'}\nMachine: ${record.machine || 'N/A'}`)) return;
 
             try {
-                alert('⏳ 正在同步至 Google 雲端，請稍候...');
-
+                alert('⏳ Syncing to Google Drive & Sheets...');
                 const payload = {
                     action: 'uploadPhoto',
                     site: record.site,
@@ -777,38 +796,39 @@
 
                 if (res.status === 'success') {
                     record.synced = true;
-                    record.photoUrl = res.photoUrl;
+                    record.photoUrl = res.photoUrl || '';
 
                     const tx = db.transaction(STORES.photos, 'readwrite');
                     const store = tx.objectStore(STORES.photos);
                     await store.put(record);
 
-                    alert('✅ 單筆紀錄已成功同步至 Google Drive 與 Google Sheets！');
+                    alert('✅ Record successfully synced!');
                     refreshDataSheet();
                     refreshPhotoLibrary();
                 } else {
-                    throw new Error(res.message || 'Server returned error');
+                    throw new Error(res.message || 'Server error');
                 }
             } catch (err) {
                 console.error('Single sync failed:', err);
-                alert('❌ 同步失敗！請檢查網路連線或 Apps Script 部署網址。');
+                alert('❌ Sync failed. Please check network connection.');
             }
         }
 
+        // Batch Sync Logic
         window.syncAllToCloud = async function() {
             const photos = await getAllRecords(STORES.photos);
             const unsyncedPhotos = photos.filter(p => !p.synced);
 
             if (unsyncedPhotos.length === 0) {
-                alert('所有本地資料皆已同步至雲端！');
+                alert('All local records are already synced!');
                 return;
             }
 
-            alert(`準備同步 ${unsyncedPhotos.length} 筆資料/照片至 Google 雲端...`);
+            alert(`Preparing to sync ${unsyncedPhotos.length} unsynced record(s)...`);
 
             try {
                 const payload = {
-                    action: 'syncBatch',
+                    action: 'batchSync',
                     records: unsyncedPhotos.map(p => ({
                         site: p.site,
                         machine: p.machine,
@@ -825,32 +845,30 @@
                         p.synced = true;
                         store.put(p);
                     });
-                    alert('☁️ 同步完成！照片已存入 Google Drive 並更新 Google Sheets。');
+                    alert('☁️ Batch sync complete!');
                     refreshPhotoLibrary();
                     refreshDataSheet();
                 } else {
-                    alert('同步失敗：' + res.message);
+                    alert('Sync failed: ' + res.message);
                 }
             } catch (err) {
-                console.error('Batch sync failed:', err);
-                alert('同步過程中發生錯誤，請檢查網路連線。');
+                console.error('Batch sync error:', err);
+                alert('Sync failed due to a network error.');
             }
         };
 
+        // NOTE 6: CLEAR ALL DATA WITH TEXT COMMAND VERIFICATION (`/clear-all`)
         window.clearAllData = function() {
             const inputEl = document.getElementById('clearConfirmInput');
             const userInput = inputEl ? inputEl.value.trim() : '';
 
-         // Check if the typed command matches exactly
+            // Guard check
             if (userInput !== '/clear-all') {
-                alert('❌ Incorrect command. Please type "/clear-all" to confirm data deletion.');
+                alert('❌ Incorrect command. Please type "/clear-all" into the box to confirm deletion.');
                 return;
             }
 
-        // Final confirmation prompt
-            if (!confirm('⚠️ Are you absolutely sure? This will permanently delete all local data!')) {
-                return;
-            }
+            if (!confirm('⚠️ Are you absolutely sure? All local records will be deleted!')) return;
 
             Promise.all([
                 clearStore(STORES.sites),
@@ -858,8 +876,8 @@
                 clearStore(STORES.photos)
             ])
             .then(() => {
-                alert('✅ Local data cleared successfully!');
-                if (inputEl) inputEl.value = ''; // Reset input field
+                alert('✅ All local data cleared.');
+                if (inputEl) inputEl.value = ''; // Clear confirmation input box
                 refreshServiceSelects();
                 refreshPhotoLibrary();
                 refreshDataSheet();
@@ -867,8 +885,34 @@
             .catch(err => alert('❌ Clear failed: ' + err.message));
         };
 
+        // NOTE 7: NETWORK EVENT LISTENERS
+        // Automatically detects when connection drops or comes back online
+        function updateNetworkStatus() {
+            const badge = document.getElementById('networkStatus');
+            if (navigator.onLine) {
+                badge.textContent = '🌐 Online';
+                badge.className = 'status-badge status-online';
+            } else {
+                badge.textContent = '📡 Offline';
+                badge.className = 'status-badge status-offline';
+            }
+        }
+
+        window.addEventListener('online', () => {
+            updateNetworkStatus();
+            console.log('🌐 Connection restored. Triggering auto-sync...');
+            window.syncAllToCloud(); // Auto-sync on reconnect
+        });
+
+        window.addEventListener('offline', () => {
+            updateNetworkStatus();
+            console.warn('📡 Device lost connection. Switching to IndexedDB offline mode.');
+        });
+
+        // Initialize App
         openDB()
             .then(() => {
+                updateNetworkStatus();
                 refreshServiceSelects();
                 refreshPhotoLibrary();
                 refreshDataSheet();
@@ -876,7 +920,7 @@
                     startQrScanner();
                 }
             })
-            .catch(err => console.error('DB init error:', err));
+            .catch(err => console.error('DB Init Error:', err));
 
         window.refreshServiceSelects = refreshServiceSelects;
         window.refreshDataSheet = refreshDataSheet;
