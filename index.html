@@ -225,12 +225,20 @@
         </div>
     </div>
 
-    <!-- ==================== Settings ==================== -->
+   <!-- ==================== Settings ==================== -->
     <div id="settings" class="screen">
         <div class="card">
             <h3>⚙️ Settings</h3>
             <p style="color:#4b5563;">Manage all stored data in this app.</p>
-            <button class="btn danger" onclick="clearAllData()">🗑️ Clear All Data</button>
+
+            <!-- New Text Confirmation Input Block -->
+            <div style="margin-bottom: 12px;">
+                <label for="clearConfirmInput" style="font-size:13px; color:#374151; font-weight:600; display:block; margin-bottom:4px;">
+                    Type <code>/clear-all</code> to confirm:
+                </label>
+                <input id="clearConfirmInput" class="input" type="text" placeholder="Type /clear-all here..." autocomplete="off">
+                <button class="btn danger" onclick="clearAllData()" style="margin-top:8px;">🗑️ Clear All Data</button>
+            </div>
             <button class="btn primary" onclick="syncAllToCloud()" style="margin-top:10px;">☁️ Sync to Cloud</button>
             <p style="font-size:12px; color:#9ca3af; margin-top:12px;">This will permanently delete all project sites, machines, and photos locally once cleared.</p>
         </div>
@@ -829,19 +837,33 @@
         };
 
         window.clearAllData = function() {
-            if (!confirm('⚠️ 這將永久刪除本地所有數據，確定嗎？')) return;
+            const inputEl = document.getElementById('clearConfirmInput');
+            const userInput = inputEl ? inputEl.value.trim() : '';
+
+         // Check if the typed command matches exactly
+            if (userInput !== '/clear-all') {
+                alert('❌ Incorrect command. Please type "/clear-all" to confirm data deletion.');
+                return;
+            }
+
+        // Final confirmation prompt
+            if (!confirm('⚠️ Are you absolutely sure? This will permanently delete all local data!')) {
+                return;
+            }
+
             Promise.all([
                 clearStore(STORES.sites),
                 clearStore(STORES.machines),
                 clearStore(STORES.photos)
             ])
             .then(() => {
-                alert('✅ 本地數據已清除！');
+                alert('✅ Local data cleared successfully!');
+                if (inputEl) inputEl.value = ''; // Reset input field
                 refreshServiceSelects();
                 refreshPhotoLibrary();
                 refreshDataSheet();
             })
-            .catch(err => alert('❌ 清除失敗：' + err.message));
+            .catch(err => alert('❌ Clear failed: ' + err.message));
         };
 
         openDB()
