@@ -6,15 +6,20 @@ Vibe code webapp be like BRuhhhhhhhhhhh🗣️🗣️🔥🔥💯
 ```markdown
 # 🛠️ AEL Maintenance SPA (Offline-First PWA)
 
-A lightweight, single-page Progressive Web App (PWA) designed for field technicians to conduct maintenance inspections, scan QR codes, take photos, and log records—**even in environments with zero internet connectivity**. 
+A lightweight, single-page Progressive Web App (PWA) designed for field technicians
+to conductmaintenance inspections, scan QR codes, take photos,
+and log records—**even in environments with zero internet connectivity**. 
 
-The app stores data locally using **IndexedDB** and automatically syncs with **Google Sheets** and **Google Drive** (generating Word `.docx` documents) via **Google Apps Script (GAS)** when a connection is restored.
+The app stores data locally using **IndexedDB** and automatically
+syncs with **Google Sheets** and **Google Drive** (generating Word `.docx` documents)
+via **Google Apps Script (GAS)** when a connection is restored.
 
 ---
 
 ## 📁 Repository File Structure
 
-To ensure the Progressive Web App (PWA) functions properly, all files must reside in the **root directory** (`/`) of your repository:
+To ensure the Progressive Web App (PWA) functions properly,
+all files must reside in the **root directory** (`/`) of your repository:
 
 ```text
 / (Repository Root)
