@@ -225,19 +225,21 @@
         </div>
     </div>
 
-   <!-- ==================== Settings ==================== -->
+  <!-- ==================== Settings ==================== -->
     <div id="settings" class="screen">
         <div class="card">
             <h3>⚙️ Settings</h3>
             <p style="color:#4b5563;">Manage all stored data in this app.</p>
-
+    
             <!-- New Text Confirmation Input Block -->
             <div style="margin-bottom: 12px;">
                 <label for="clearConfirmInput" style="font-size:13px; color:#374151; font-weight:600; display:block; margin-bottom:4px;">
                     Type <code>/clear-all</code> to confirm:
                 </label>
                 <input id="clearConfirmInput" class="input" type="text" placeholder="Type /clear-all here..." autocomplete="off">
+                <button class="btn danger" onclick="clearAllData()" style="margin-top:8px;">🗑️ Clear All Data</button>
             </div>
+    
             <button class="btn primary" onclick="syncAllToCloud()" style="margin-top:10px;">☁️ Sync to Cloud</button>
             <p style="font-size:12px; color:#9ca3af; margin-top:12px;">This will permanently delete all project sites, machines, and photos locally once cleared.</p>
         </div>
