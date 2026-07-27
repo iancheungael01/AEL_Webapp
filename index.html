@@ -5,10 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>AEL Maintenance SPA (Offline PWA + IndexedDB)</title>
 
-    <!-- 
-      NOTE: QR Code library is loaded from CDN. 
-      The Service Worker will cache this file on first load so it works offline.
-    -->
+    <!-- QR Code Scanner CDN -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
     <style>
@@ -264,7 +261,7 @@
     (function() {
         'use strict';
 
-        // Updated Active Google Apps Script Web App URL
+        // Target Google Apps Script Web App URL
         const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxEM452YrCRC5_tYSnPCDXp56Bj-GPa5YNivjS_adh-WVbhHuxjXrA4T8o1iGnD0o8K4Q/exec'; 
 
         // INDEXEDDB CONFIGURATION
@@ -351,7 +348,7 @@
             });
         }
 
-        // Send JSON data using text/plain header to bypass CORS preflight checks
+        // Send JSON data using text/plain header to avoid CORS preflight options check
         async function sendToGAS(payload) {
             const response = await fetch(GAS_WEB_APP_URL, {
                 method: 'POST',
