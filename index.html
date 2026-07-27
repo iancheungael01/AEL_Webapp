@@ -262,7 +262,7 @@
         'use strict';
 
         // Target Google Apps Script Web App URL
-        const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwCQ29crF0P72H7tDeTCwNYOn0ofrB-1Bd0Lz0LtX1ruqo1rWYktnZTVLGmtczYyO_4/exec'; 
+        const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxEM452YrCRC5_tYSnPCDXp56Bj-GPa5YNivjS_adh-WVbhHuxjXrA4T8o1iGnD0o8K4Q/exec'; 
 
         // INDEXEDDB CONFIGURATION
         const DB_NAME = 'AEL_MaintenanceDB';
@@ -348,15 +348,11 @@
             });
         }
 
-        // Send JSON data using text/plain header to avoid CORS preflight options check
+        // Send payload WITHOUT custom headers to avoid CORS OPTIONS preflight
         async function sendToGAS(payload) {
             const response = await fetch(GAS_WEB_APP_URL, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'text/plain;charset=utf-8' 
-                },
-                body: JSON.stringify(payload),
-                redirect: 'follow'
+                body: JSON.stringify(payload)
             });
 
             const responseText = await response.text();
@@ -514,19 +510,14 @@
             const readerElement = document.getElementById('qr-reader');
             if (!readerElement) return;
 
-            if (qrScanner) {
-                try { qrScanner.stop(); } catch(e) {}
-                qrScanner = null;
-            }
+            stopQrScanner();
 
             qrScanner = new Html5Qrcode("qr-reader");
             qrScanner.start(
                 { facingMode: "environment" },
                 { fps: 10, qrbox: { width: 250, height: 250 } },
                 async (decodedText) => {
-                    qrScanner.stop();
-                    isQrScanning = false;
-                    updateQrButton();
+                    stopQrScanner();
 
                     const parts = decodedText.split(',').map(s => s.trim());
                     if (parts.length === 2) {
@@ -557,8 +548,17 @@
 
         function stopQrScanner() {
             if (qrScanner) {
-                try { qrScanner.stop(); } catch(e) {}
+                const scannerInstance = qrScanner;
                 qrScanner = null;
+                if (scannerInstance.isScanning) {
+                    scannerInstance.stop().then(() => {
+                        try { scannerInstance.clear(); } catch(e) {}
+                    }).catch(err => {
+                        console.warn('QR Scanner stop warning:', err);
+                    });
+                } else {
+                    try { scannerInstance.clear(); } catch(e) {}
+                }
             }
             isQrScanning = false;
             updateQrButton();
