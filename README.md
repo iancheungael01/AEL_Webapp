@@ -1,5 +1,5 @@
 # AEL_Webapp
-Vibe code webapp be like BRuhhhhhhhhhhh🗣️🗣️🔥🔥💯
+Vibe code webapp goes BRuhhhhhhhhhhh🗣️🗣️🔥🔥💯
 
 ### 📄 `README.md` (Copy & Paste to Repository Root)
 
