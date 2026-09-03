@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>AEL 維護系統 (離線 PWA + IndexedDB)</title>
+
+    <!-- QR Code Scanner CDN -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+    <style>
+        * { box-sizing: border-box; }
+        body { margin:0; background:#e5e7eb; font-family:'PingFang TC', 'Microsoft JhengHei', sans-serif; display:flex; justify-content:center; min-height:100vh; padding:10px 0; }
+        .phone { width:430px; max-width:100%; padding:20px 16px; }
+
+        .screen { display:none; }
+        .screen.active { display:block; }
+
+        .card { background:#fff; border-radius:16px; padding:16px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.05); }
+        .card h3 { margin-top:0; margin-bottom:12px; font-weight:600; font-size:1.1rem; }
+        .card h4 { margin-top:10px; margin-bottom:6px; font-weight:600; font-size:0.95rem; color:#374151; }
+        .input { width:100%; padding:12px; box-sizing:border-box; border:1px solid #ccc; border-radius:10px; margin:4px 0 10px 0; font-size:14px; background:#fff; color:#000; }
+        .input:focus { outline:2px solid #02021f; border-color:transparent; }
+        select.input option { color:#000; background:#fff; }
+
+        .btn { width:100%; padding:12px; border:none; border-radius:12px; font-size:14px; font-weight:600; cursor:pointer; transition:opacity 0.2s; text-align:center; }
+        .btn:active { opacity:0.7; }
+        .primary { background:#02021f; color:#fff; }
+        .secondary { background:#eef0f3; color:#1f2937; }
+        .danger { background:#e11d48; color:#fff; }
+        .warning { background:#f59e0b; color:#fff; }
+        .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .grid2 .btn { width:100%; }
+
+        .record { background:#eef0f3; padding:12px; border-radius:10px; margin:8px 0; font-size:14px; line-height:1.5; cursor:pointer; transition:background-color 0.2s; }
+        .record:hover { background:#e2e8f0; }
+        .record .meta { color:#4b5563; font-size:13px; margin-top:4px; }
+
+        img, video { width:100%; border-radius:12px; object-fit:cover; background:#ddd; }
+
+        .photo-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px; }
+        .photo-grid .thumb { aspect-ratio:1/1; border-radius:8px; background:#e5e7eb; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; border:1px solid #ddd; position:relative; }
+        .photo-grid .thumb img { width:100%; height:100%; object-fit:cover; }
+        .photo-grid .thumb .info-badge { position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.6); color:#fff; font-size:10px; padding:4px 6px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+        #qr-reader { background: #000; min-height: 200px; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
+        #qr-reader video { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .qr-control { margin-top: 10px; display: flex; gap: 10px; }
+        .qr-control .btn { flex: 1; }
+
+        .status-badge { font-size: 12px; padding: 4px 8px; border-radius: 6px; float: right; font-weight: normal; }
+        .status-online { background: #d1fae5; color: #065f46; }
+        .status-offline { background: #fee2e2; color: #991b1b; }
+
+        @media (max-width:480px) { .phone { padding:10px 8px; } }
+    </style>
+</head>
+<body>
+<div class="phone">
+
+    <!-- 主頁 -->
+    <div id="home" class="screen active">
+        <div style="margin-bottom:12px;">
+            <span id="networkStatus" class="status-badge status-online">🌐 線上</span>
+            <h2 style="margin:0;">AEL 維修維護系統</h2>
+        </div>
+        <button class="btn primary" onclick="showPage('service')">工程服務 (Site)</button><br><br>
+        <button class="btn secondary" onclick="showPage('clockin')">技術員簽到</button><br><br>
+        <button class="btn warning" onclick="showPage('settings')">⚙️ 系統設定</button>
+    </div>
+
+    <!-- 簽到頁面 -->
+    <div id="clockin" class="screen">
+        <div class="card">
+            <h3>技術員簽到</h3>
+            <input class="input" placeholder="技術員姓名">
+            <input class="input" placeholder="員工編號">
+            <input class="input" placeholder="工作地點">
+            <button class="btn primary" onclick="alert('簽到紀錄已儲存於本地')">簽到</button>
+        </div>
+        <div class="grid2">
+            <button class="btn secondary" onclick="showPage('home')">返回</button>
+            <button class="btn danger" onclick="showPage('home')">主頁</button>
+        </div>
+    </div>
+
+    <!-- 工程服務頁面 -->
+    <div id="service" class="screen">
+        <div class="card">
+            <h3>QR Code 掃描器</h3>
+            <div id="qr-reader"></div>
+            <div class="qr-control">
+                <button id="qrControlBtn" class="btn primary" onclick="restartQrScanner()">⟳ 重新掃描</button>
+            </div>
+            <p style="font-size:12px; color:#666; margin-top:8px;">
+                格式: <code>項目地點, 機器名稱, 機器ID, 工作單ID</code>
+            </p>
+        </div>
+                
+        <div class="card">
+            <h3>項目資料選擇與新增</h3>
+
+            <!-- 1. 項目地點 -->
+            <h4>1. 項目地點 (Venues)</h4>
+            <select id="siteSelect" class="input"></select>
+            <details style="margin-bottom:10px; font-size:13px; color:#4b5563;">
+                <summary style="cursor:pointer; font-weight:600; padding:4px 0; color:#02021f;">+ 清單中沒有？手動新增地點</summary>
+                <div style="margin-top:8px;">
+                    <input id="siteInput" class="input" placeholder="輸入新地點名稱..." list="siteDatalist">
+                    <datalist id="siteDatalist"></datalist>
+                    <button class="btn primary" onclick="addSite()">新增地點至下拉選單</button>
+                </div>
+            </details>
+
+            <!-- 2. 機器名稱 -->
+            <h4>2. 機器名稱 (Equipments)</h4>
+            <select id="machineSelect" class="input"></select>
+            <details style="margin-bottom:10px; font-size:13px; color:#4b5563;">
+                <summary style="cursor:pointer; font-weight:600; padding:4px 0; color:#02021f;">+ 清單中沒有？手動新增機器</summary>
+                <div style="margin-top:8px;">
+                    <input id="machineInput" class="input" placeholder="輸入新機器名稱..." list="machineDatalist">
+                    <datalist id="machineDatalist"></datalist>
+                    <button class="btn primary" onclick="addMachine()">新增機器至下拉選單</button>
+                </div>
+            </details>
+
+            <!-- 3. 機器 ID -->
+            <h4>3. 機器編號 (Machine ID / Reg No.)</h4>
+            <select id="machineIdSelect" class="input"></select>
+            <details style="margin-bottom:10px; font-size:13px; color:#4b5563;">
+                <summary style="cursor:pointer; font-weight:600; padding:4px 0; color:#02021f;">+ 清單中沒有？手動新增機器編號</summary>
+                <div style="margin-top:8px;">
+                    <input id="machineIdInput" class="input" placeholder="輸入新機器編號..." list="machineIdDatalist">
+                    <datalist id="machineIdDatalist"></datalist>
+                    <button class="btn primary" onclick="addMachineId()">新增機器編號至下拉選單</button>
+                </div>
+            </details>
+
+            <!-- 4. 工作單 ID -->
+            <h4>4. 工作單編號 (Job ID)</h4>
+            <select id="jobIdSelect" class="input"></select>
+            <details style="margin-bottom:10px; font-size:13px; color:#4b5563;">
+                <summary style="cursor:pointer; font-weight:600; padding:4px 0; color:#02021f;">+ 手動新增工作單號</summary>
+                <div style="margin-top:8px;">
+                    <input id="jobIdInput" class="input" placeholder="輸入新工作單號..." list="jobIdDatalist">
+                    <datalist id="jobIdDatalist"></datalist>
+                    <button class="btn primary" onclick="addJobId()">新增工作單號至下拉選單</button>
+                </div>
+            </details>
+        </div>
+
+        <div class="grid2">
+            <button class="btn primary" onclick="prepareAndShowCamera()">開啟相機</button>
+            <button class="btn secondary" onclick="showPage('library')">相片圖庫</button>
+            <button class="btn primary" onclick="showPage('data')">數據紀錄</button>
+            <button class="btn danger" onclick="showPage('home')">返回主頁</button>
+        </div>
+    </div>
+
+    <!-- 相機頁面 -->
+    <div id="camera" class="screen">
+        <div class="card">
+            <h3>拍攝相片</h3>
+            <div id="cameraContext" style="background:#eef0f3; padding:8px; border-radius:6px; margin-bottom:10px; font-size:12px; line-height:1.6;">
+                地點: <span id="cameraSiteDisplay">(無)</span> | 機器: <span id="cameraMachineDisplay">(無)</span><br>
+                機器ID: <span id="cameraMachineIdDisplay">(無)</span> | 工作單ID: <span id="cameraJobIdDisplay">(無)</span>
+            </div>
+            <video id="cameraFeed" autoplay playsinline style="height:240px; background:#000;"></video>
+            <canvas id="cameraCanvas" hidden></canvas>
+        </div>
+        <div class="grid2">
+            <button class="btn primary" onclick="startCamera()">啟動鏡頭</button>
+            <button class="btn primary" onclick="capturePhoto()">拍攝</button>
+            <button class="btn secondary" onclick="showPage('service')">返回</button>
+            <button class="btn danger" onclick="showPage('service')">離開</button>
+        </div>
+    </div>
+
+    <!-- 確認發送頁面 -->
+    <div id="confirm" class="screen">
+        <div class="card">
+            <h3>相片預覽與確認</h3>
+            <div id="confirmContext" style="background:#eef0f3; padding:8px; border-radius:6px; margin-bottom:10px; font-size:12px; line-height:1.6;">
+                地點: <span id="confirmSiteDisplay">(無)</span> | 機器: <span id="confirmMachineDisplay">(無)</span><br>
+                機器ID: <span id="confirmMachineIdDisplay">(無)</span> | 工作單ID: <span id="confirmJobIdDisplay">(無)</span>
+            </div>
+            <img id="confirmPhotoPreview" style="height:240px; background:#ddd;">
+        </div>
+        <div class="grid2">
+            <button class="btn primary" onclick="confirmAndUploadPhoto()">🚀 確認並傳送</button>
+            <button class="btn danger" onclick="showPage('camera')">重新拍攝</button>
+            <button class="btn secondary" onclick="showPage('library')">相片庫</button>
+            <button class="btn secondary" onclick="showPage('data')">數據表</button>
+        </div>
+    </div>
+
+    <!-- 相片圖庫頁面 -->
+    <div id="library" class="screen">
+        <div class="card">
+            <h3>相片圖庫</h3>
+            <button class="btn primary" onclick="uploadPhoto()">📤 選擇檔案上傳</button>
+            <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFileUpload(event)">
+            <div id="photoGrid" class="photo-grid"></div>
+            <p id="libraryEmpty" style="color:#6b7280; text-align:center;">暫無儲存的相片。</p>
+        </div>
+        <div class="grid2">
+            <button class="btn secondary" onclick="showPage('service')">返回</button>
+            <button class="btn danger" onclick="showPage('home')">主頁</button>
+        </div>
+    </div>
+
+    <!-- 數據表頁面 -->
+    <div id="data" class="screen">
+        <div class="card">
+            <h3>工程紀錄表</h3>
+            <p style="margin:4px 0;"><strong>項目地點:</strong> <span id="dataSheetSite">(無)</span></p>
+            <p style="margin:4px 0;"><strong>機器名稱:</strong> <span id="dataSheetMachine">(無)</span></p>
+            <p style="margin:4px 0;"><strong>機器 ID:</strong> <span id="dataSheetMachineId">(無)</span></p>
+            <p style="margin:4px 0;"><strong>工作單 ID:</strong> <span id="dataSheetJobId">(無)</span></p>
+        </div>
+        <div class="card">
+            <h3>維護紀錄列表</h3>
+            <p style="font-size:12px; color:#6b7280;">點擊未同步的項目可單獨上傳至雲端。</p>
+            <div id="maintenanceRecordList"></div>
+        </div>
+        <div class="grid2">
+            <button class="btn primary" onclick="showPage('checklist')">檢查清單</button>
+            <button class="btn danger" onclick="showPage('home')">主頁</button>
+        </div>
+    </div>
+
+    <!-- 檢查清單頁面 -->
+    <div id="checklist" class="screen">
+        <div class="card">
+            <h3>檢查清單 (Checklist)</h3>
+            <p><label><input type="checkbox"> 檢查引擎機油位 (Engine Oil)</label></p>
+            <p><label><input type="checkbox"> 檢查液壓系統 (Hydraulic System)</label></p>
+            <p><label><input type="checkbox"> 測試緊急停止按鈕 (E-stop Button)</label></p>
+        </div>
+        <div class="grid2">
+            <button class="btn primary" onclick="showPage('saved')">儲存紀錄</button>
+            <button class="btn danger" onclick="showPage('home')">主頁</button>
+        </div>
+    </div>
+
+    <!-- 儲存完成頁面 -->
+    <div id="saved" class="screen">
+        <div class="card">
+            <h2>檢查清單已儲存 ✓</h2>
+            <button class="btn danger" onclick="showPage('home')">返回主頁</button>
+        </div>
+    </div>
+
+    <!-- 設定頁面 -->
+    <div id="settings" class="screen">
+        <div class="card">
+            <h3>⚙️ 系統設定</h3>
+            <p style="color:#4b5563; font-size:14px;">管理本地 IndexedDB 數據及雲端同步。</p>
+            <button class="btn primary" onclick="syncAllToCloud()" style="margin-bottom:16px;">☁️ 一鍵同步未上傳紀錄至雲端</button>
+            <hr style="border:0; border-top:1px solid #eee; margin:16px 0;">
+            <div style="margin-bottom: 12px;">
+                <label for="clearConfirmInput" style="font-size:13px; color:#374151; font-weight:600; display:block; margin-bottom:4px;">
+                    輸入 <code>/clear-all</code> 以確認清除本地數據：
+                </label>
+                <input id="clearConfirmInput" class="input" type="text" placeholder="在此輸入 /clear-all ..." autocomplete="off">
+                <button class="btn danger" onclick="clearAllData()" style="margin-top:8px;">🗑️ 清除本地所有紀錄</button>
+            </div>
+        </div>
+        <div class="grid2">
+            <button class="btn secondary" onclick="showPage('home')">返回主頁</button>
+            <button class="btn danger" onclick="showPage('home')">離開</button>
+        </div>
+    </div>
+
+</div>
+
+<!-- JAVASCRIPT 邏輯 -->
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('✅ Service Worker 註冊成功。'))
+                .catch(err => console.error('❌ Service Worker 註冊失敗:', err));
+        });
+    }
+
+    (function() {
+        'use strict';
+
+        const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxjLzP4Fd6eshH5P6saiyM2QEPOyCC4ntJNBHGJpLY6DbfxZF4XTQ_QypljFysLG4d4qQ/exec'; 
+
+        const DB_NAME = 'AEL_MaintenanceDB';
+        const DB_VERSION = 3;
+        const STORES = { 
+            sites: 'projectSites', 
+            machines: 'machines', 
+            machineIds: 'machineIds',
+            jobIds: 'jobIds',
+            photos: 'photos' 
+        };
+
+        // 從試算表導入的所有 79 個項目地點 (Venues)
+        const DEFAULT_SITES = [
+            "AIA TOWER", "上水救護站", "上水警察已婚宿舍", "中區消防局", "中區警署", 
+            "九龍塘消防局", "九龍灣消防局工場", "元朗消防局", "元朗警察已婚宿舍", "元朗警署", 
+            "北角消防官員已婚宿舍", "北角警署", "啟德消防局", "大埔分區警署", "大埔消防局", 
+            "大美督政府儲存倉庫", "大赤沙消防局", "寶馬山消防局", "將軍澳警署", "尖東康莊道1號香港消防處總部大樓", 
+            "尖東救護站", "尖東消防局", "尖沙咀消防局宿舍", "尖沙咀警署", "屯門分區消防局", 
+            "屯門湖康警察已婚宿舍", "屯門滅火輪消防局", "屯門警署", "新油麻地分區警署", "新油麻地警署", 
+            "新界南總區警察總部", "旺角救護站", "旺角消防局", "旺角警署", "柴灣已婚警察宿舍", 
+            "水警東警署", "沙田警署", "油塘消防局", "油麻地友翔道3號 新油麻地警署", "油麻地救護站", 
+            "油麻地消防局", "流浮山救護站", "流浮山消防局", "消防及救護學院", "消防潛水訓練中心", 
+            "深水埗區警察總部暨長沙灣警署", "牛池灣永定道消防已婚宿舍", "田心分區警署", "筲箕灣消防局", "芬園警察已婚宿舍", 
+            "荃灣消防局", "荃灣警署", "落馬洲警署", "葵涌區警署", "西九龍交通行動基地", 
+            "西九龍救援訓練中心", "西九龍總區警察總部", "西區警署", "西營盤郵政局大厦(消防已婚人員宿舍)", "西貢警署", 
+            "觀塘紀律部隊宿舍", "觀塘警署", "警隊博物館", "青山警署", "青州街11號海關職員宿舍", 
+            "青衣警察已婚宿舍", "香港仔消防局", "香港廉政公署", "香港消防處總部大樓", "香港警察偵輯訓練中心", 
+            "香港警察學院", "香港警察學院 戰術訓練中心", "香港警察學院 督察宿舍", "香港警察學院 警察已婚宿舍", "香港輔助警察總部", 
+            "馬鞍山消防局", "馬頭涌救護站", "黃大仙盈鳳里消防宿舍", "黃大仙警署"
+        ];
+
+        // 從試算表導入的所有 22 個機器名稱 (Equipments)
+        const DEFAULT_MACHINES = [
+            "傳統水泵", "傳統水泵 4KW 及以下", "傳統水泵 RF-01", "傳統水泵> 4 到 10KW", 
+            "傳統水泵（BP1A）", "傳統水泵（BP2A）", "傳統水泵（廚房）", "傳統水泵（清水）", 
+            "傳統水泵（雨水）", "冷水給水泵", "加壓水泵", "加壓水泵（清水）", 
+            "地下室潛水泵", "循環水泵（熱水）", "污水處理設施- 污水處理廠", "潛水式水泵", 
+            "潛水式污水泵", "潛水式雨水泵", "潛水沖廁式水泵", "潛水沖水泵", 
+            "潛水食水泵", "給水泵（淨水）"
+        ];
+
+        // 從試算表導入的所有 333 個機器編號 (Reg No. / Machine IDs)
+        const DEFAULT_MACHINE_IDS = [
+            "10337628-01", "10337628-02", "10337628-03", "10337628-04", "10337628-05", "10337628-06", "10337628-07", "10337646-01", "10337646-02", "10337646-03", 
+            "10337646-04", "10337646-05", "10337646-06", "10337646-07", "10337646-08", "10337646-09", "10337646-10", "10337646-11", "10337646-12", "10337646-13", 
+            "10337646-14", "10337646-15", "10337646-16", "10337646-17", "10337646-18", "10337723-01", "10337723-02", "10337723-03", "10337723-04", "10337723-05", 
+            "10337723-06", "10337723-07", "10337723-08", "10337723-09", "10337723-10", "10337723-11", "10337723-12", "10337723-13", "10337723-14", "10337723-15", 
+            "10337723-16", "10337723-17", "10337723-18", "10337723-19", "10337723-20", "10337723-21", "10337723-22", "10337723-23", "10337723-24", "10337723-25", 
+            "10337723-26", "10337723-27", "10337723-28", "10337723-29", "10337723-30", "10337723-31", "10337723-32", "10337723-33", "10337723-34", "10337723-35", 
+            "10337723-36", "10337723-37", "10337723-38", "10337723-39", "10337723-40", "10337723-41", "10337723-42", "10337723-43", "10337723-44", "10337723-45", 
+            "10337723-46", "10337723-47", "10337723-48", "10337723-49", "10337723-50", "10337723-51", "10337723-52", "10337723-53", "10337723-54", "10337723-55", 
+            "10337723-56", "10337723-57", "10337723-58", "10337723-59", "10337723-60", "10337723-61", "10337723-62", "10337723-63", "10337723-64", "10337723-65", 
+            "10337723-66", "10337723-67", "10337723-68", "10337723-69", "10337723-70", "10337723-71", "10337723-72", "10337723-73", "10337723-74", "10337723-75", 
+            "10337723-76", "10337723-77", "10337723-78", "10337723-79", "10337723-80", "10337723-81", "10337723-82", "10337723-83", "10337723-84", "10337723-85", 
+            "10337723-86", "10337723-87", "10337723-88", "10337723-89", "10337723-90", "10337723-91", "10337723-92", "10337723-93", "10337723-94", "10337723-95", 
+            "10337723-96", "10337723-97", "10337723-98", "10337723-99", "10337724-01", "10337724-02", "10337724-03", "10337724-04", "10337724-05", "10337724-06", 
+            "10337724-07", "10337724-08", "10337724-09", "10337724-10", "10337724-11", "10337724-12", "10337724-13", "10337724-14", "10337724-15", "10337724-16", 
+            "10337724-17", "10337724-18", "10337724-19", "10337724-20", "10337724-21", "10337724-22", "10337724-23", "10337724-24", "10337724-25", "10337724-26", 
+            "10337724-27", "10337724-28", "10337724-29", "10337724-30", "10337724-31", "10337724-32", "10337724-33", "10337724-34", "10337724-35", "10337724-36", 
+            "10337724-37", "10337724-38", "10337724-39", "10337724-40", "10337724-41", "10337724-42", "10337724-43", "10337724-44", "10337724-45", "10337724-46", 
+            "10337724-47", "10337724-48", "10337724-49", "10337724-50", "10337724-51", "10337724-52", "10337724-53", "10337724-54", "10337724-55", "10337724-56", 
+            "10337724-57", "10337724-58", "10337724-59", "10337724-60", "10337724-61", "10337724-62", "10337724-63", "10337724-64", "10337724-65", "10337724-66", 
+            "10337724-67", "10337724-68", "10337724-69", "10337724-70", "10337724-71", "10337724-72", "10337724-73", "10337724-74", "10337724-75", "10337724-76", 
+            "10337724-77", "10337724-78", "10337724-79", "10337724-80", "10337724-81", "10337724-82", "10337724-83", "10337724-84", "10337724-85", "10337724-86", 
+            "10337724-87", "10337724-88", "10337724-89", "10337724-90", "10337724-91", "10337724-92", "10337724-93", "10337724-94", "10337724-95", "10337724-96", 
+            "10337724-97", "10337724-98", "10337724-99", "10436154-01", "10436154-02", "10436154-03", "10436154-04", "10436154-05", "10436154-06", "10436154-07", 
+            "10436154-08", "10436154-09", "10436154-10", "10436154-11", "10436154-12", "10436154-13", "10436154-14", "10436154-15", "10436154-16", "10436154-17", 
+            "10436154-18", "10436154-19", "10436154-20", "10436154-21", "10436154-22", "10436154-23", "10436154-24", "FSDKBWSSH01", "FSDKBWSSH02", "FSDKBWSWT01", 
+            "FSDKBWSWT02", "SHK-WP30999", "SHK-WP31000", "SWP30004", "WP30101", "WP30102", "WP30103", "WP30104", "WP30533", "WP30534", 
+            "WP30535", "WP30536", "WP30537", "WP30538", "WP30539", "WP30540", "WP30541", "WP30542", "WP30543", "WP30544", 
+            "WP30545", "WP30546", "WP30547", "WP30548", "WP30549", "WP30550", "WP30551", "WP30552", "WP30553", "WP30554", 
+            "WP30555", "WP30556", "WP30557", "WP30558", "WP30559", "WP30560", "WP30561", "WP30562", "WP30563", "WP30564", 
+            "WP30565", "WP30566", "WP30567", "WP30568", "WP30569", "WP30570", "WP30571", "WP30572", "WP30573", "WP30574", 
+            "WP30575", "WP30576", "WP30577", "WP30578", "WP30579", "WP30580", "WP30848", "WP30849", "WP30850", "WP30851", 
+            "WP30852", "WP30853", "WP30854", "WP30855", "WP30856", "WP30857", "WP30858", "WP30859", "WP30860", "WP30861", 
+            "WP30862", "WP30863", "WP30864"
+        ];
+
+        const DEFAULT_JOB_IDS = ["JOB-2026-001", "JOB-2026-002", "JOB-2026-003"];
+
+        let db = null;
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                if (db) return resolve(db);
+                const req = indexedDB.open(DB_NAME, DB_VERSION);
+                req.onupgradeneeded = (ev) => {
+                    const db = ev.target.result;
+                    if (!db.objectStoreNames.contains(STORES.sites)) db.createObjectStore(STORES.sites, { keyPath: 'id', autoIncrement: true });
+                    if (!db.objectStoreNames.contains(STORES.machines)) db.createObjectStore(STORES.machines, { keyPath: 'id', autoIncrement: true });
+                    if (!db.objectStoreNames.contains(STORES.machineIds)) db.createObjectStore(STORES.machineIds, { keyPath: 'id', autoIncrement: true });
+                    if (!db.objectStoreNames.contains(STORES.jobIds)) db.createObjectStore(STORES.jobIds, { keyPath: 'id', autoIncrement: true });
+                    if (!db.objectStoreNames.contains(STORES.photos)) {
+                        const store = db.createObjectStore(STORES.photos, { keyPath: 'id', autoIncrement: true });
+                        store.createIndex('timestamp', 'timestamp', { unique: false });
+                    }
+                };
+                req.onsuccess = async (ev) => { 
+                    db = ev.target.result; 
+                    await seedDefaultData();
+                    resolve(db); 
+                };
+                req.onerror = (ev) => reject(ev.target.error);
+            });
+        }
+
+        async function seedDefaultData() {
+            const sites = await getAllRecords(STORES.sites);
+            if (sites.length === 0) {
+                for (const name of DEFAULT_SITES) await addRecord(STORES.sites, { name });
+            }
+            const machines = await getAllRecords(STORES.machines);
+            if (machines.length === 0) {
+                for (const name of DEFAULT_MACHINES) await addRecord(STORES.machines, { name });
+            }
+            const mIds = await getAllRecords(STORES.machineIds);
+            if (mIds.length === 0) {
+                for (const name of DEFAULT_MACHINE_IDS) await addRecord(STORES.machineIds, { name });
+            }
+            const jIds = await getAllRecords(STORES.jobIds);
+            if (jIds.length === 0) {
+                for (const name of DEFAULT_JOB_IDS) await addRecord(STORES.jobIds, { name });
+            }
+        }
+
+        function addRecord(storeName, data) {
+            return openDB().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const req = tx.objectStore(storeName).add(data);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            }));
+        }
+
+        function getAllRecords(storeName) {
+            return openDB().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const req = tx.objectStore(storeName).getAll();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            }));
+        }
+
+        function deleteRecord(storeName, id) {
+            return openDB().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const req = tx.objectStore(storeName).delete(id);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            }));
+        }
+
+        function clearStore(storeName) {
+            return openDB().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const req = tx.objectStore(storeName).clear();
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            }));
+        }
+
+        async function sendToGAS(payload) {
+            const response = await fetch(GAS_WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+            const responseText = await response.text();
+            try {
+                return JSON.parse(responseText);
+            } catch (err) {
+                console.error('❌ Google Apps Script 回傳非 JSON 格式:', responseText);
+                throw new Error('伺服器回應無效。');
+            }
+        }
+
+        function showPage(pageId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            const el = document.getElementById(pageId);
+            if (el) el.classList.add('active');
+            
+            if (pageId === 'service') {
+                refreshServiceSelects();
+                startQrScanner();
+            } else {
+                stopQrScanner();
+            }
+            if (pageId === 'library') refreshPhotoLibrary();
+            if (pageId === 'data') refreshDataSheet();
+            if (pageId === 'camera') {
+                stopCamera();
+                setTimeout(startCamera, 300);
+            }
+        }
+        window.showPage = showPage;
+
+        let currentSite = '';
+        let currentMachine = '';
+        let currentMachineId = '';
+        let currentJobId = '';
+
+        async function refreshServiceSelects(selS, selM, selMId, selJId) {
+            const sites = await getAllRecords(STORES.sites);
+            const machines = await getAllRecords(STORES.machines);
+            const machineIds = await getAllRecords(STORES.machineIds);
+            const jobIds = await getAllRecords(STORES.jobIds);
+
+            populateDropdownAndDatalist('siteSelect', 'siteDatalist', sites, selS, val => currentSite = val);
+            populateDropdownAndDatalist('machineSelect', 'machineDatalist', machines, selM, val => currentMachine = val);
+            populateDropdownAndDatalist('machineIdSelect', 'machineIdDatalist', machineIds, selMId, val => currentMachineId = val);
+            populateDropdownAndDatalist('jobIdSelect', 'jobIdDatalist', jobIds, selJId, val => currentJobId = val);
+        }
+
+        function populateDropdownAndDatalist(selectId, datalistId, items, selectedValue, onUpdateCurrent) {
+            const select = document.getElementById(selectId);
+            const datalist = document.getElementById(datalistId);
+            select.innerHTML = '';
+            datalist.innerHTML = '';
+
+            items.forEach(item => {
+                const optSelect = document.createElement('option');
+                optSelect.value = item.name;
+                optSelect.textContent = item.name;
+                select.appendChild(optSelect);
+
+                const optData = document.createElement('option');
+                optData.value = item.name;
+                datalist.appendChild(optData);
+            });
+
+            if (selectedValue) {
+                select.value = selectedValue;
+                onUpdateCurrent(selectedValue);
+            } else {
+                onUpdateCurrent(select.value || '');
+            }
+
+            select.onchange = function() { onUpdateCurrent(this.value); };
+        }
+
+        window.addSite = async function() {
+            const input = document.getElementById('siteInput');
+            const val = input.value.trim();
+            if (!val) { alert('請輸入項目地點名稱。'); return; }
+
+            await addRecord(STORES.sites, { name: val });
+            input.value = '';
+            await refreshServiceSelects(val, currentMachine, currentMachineId, currentJobId);
+            alert('✅ 新地點已成功新增至下拉選單！');
+        };
+
+        window.addMachine = async function() {
+            const input = document.getElementById('machineInput');
+            const val = input.value.trim();
+            if (!val) { alert('請輸入機器名稱。'); return; }
+
+            await addRecord(STORES.machines, { name: val });
+            input.value = '';
+            await refreshServiceSelects(currentSite, val, currentMachineId, currentJobId);
+            alert('✅ 新機器名稱已成功新增至下拉選單！');
+        };
+
+        window.addMachineId = async function() {
+            const input = document.getElementById('machineIdInput');
+            const val = input.value.trim();
+            if (!val) { alert('請輸入機器編號。'); return; }
+
+            await addRecord(STORES.machineIds, { name: val });
+            input.value = '';
+            await refreshServiceSelects(currentSite, currentMachine, val, currentJobId);
+            alert('✅ 新機器編號已成功新增至下拉選單！');
+        };
+
+        window.addJobId = async function() {
+            const input = document.getElementById('jobIdInput');
+            const val = input.value.trim();
+            if (!val) { alert('請輸入工作單號。'); return; }
+
+            await addRecord(STORES.jobIds, { name: val });
+            input.value = '';
+            await refreshServiceSelects(currentSite, currentMachine, currentMachineId, val);
+            alert('✅ 新工作單號已成功新增至下拉選單！');
+        };
+
+        let qrScanner = null;
+        let isQrScanning = false;
+
+        function updateQrButton() {
+            const btn = document.getElementById('qrControlBtn');
+            if (btn) btn.textContent = isQrScanning ? '⟳ 重新掃描' : '▶ 啟動掃描器';
+        }
+
+        async function ensureExistsAndSave(storeName, value) {
+            const items = await getAllRecords(storeName);
+            if (!items.some(i => i.name === value)) {
+                await addRecord(storeName, { name: value });
+            }
+        }
+
+        function startQrScanner() {
+            if (isQrScanning) return;
+            const readerElement = document.getElementById('qr-reader');
+            if (!readerElement) return;
+
+            stopQrScanner();
+            qrScanner = new Html5Qrcode("qr-reader");
+            qrScanner.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                async (decodedText) => {
+                    stopQrScanner();
+                    const parts = decodedText.split(',').map(s => s.trim());
+                    if (parts.length >= 2) {
+                        const site = parts[0] || currentSite;
+                        const machine = parts[1] || currentMachine;
+                        const mId = parts[2] || currentMachineId;
+                        const jId = parts[3] || currentJobId;
+
+                        if (site) await ensureExistsAndSave(STORES.sites, site);
+                        if (machine) await ensureExistsAndSave(STORES.machines, machine);
+                        if (mId) await ensureExistsAndSave(STORES.machineIds, mId);
+                        if (jId) await ensureExistsAndSave(STORES.jobIds, jId);
+
+                        await refreshServiceSelects(site, machine, mId, jId);
+                        alert(`✅ 掃描並選取成功:\n地點: ${site}\n機器: ${machine}\n機器ID: ${mId}\n工作單ID: ${jId}`);
+                    }
+                    if (document.getElementById('service').classList.contains('active')) {
+                        setTimeout(startQrScanner, 1000);
+                    }
+                },
+                () => {}
+            ).then(() => { isQrScanning = true; updateQrButton(); })
+             .catch(() => { isQrScanning = false; updateQrButton(); });
+        }
+
+        function stopQrScanner() {
+            if (qrScanner) {
+                const instance = qrScanner;
+                qrScanner = null;
+                if (instance.isScanning) {
+                    instance.stop().then(() => { try { instance.clear(); } catch(e){} }).catch(() => {});
+                } else {
+                    try { instance.clear(); } catch(e){}
+                }
+            }
+            isQrScanning = false;
+            updateQrButton();
+        }
+
+        window.restartQrScanner = function() {
+            stopQrScanner();
+            if (document.getElementById('service').classList.contains('active')) startQrScanner();
+        };
+
+        window.prepareAndShowCamera = function() {
+            currentSite = document.getElementById('siteSelect').value || '';
+            currentMachine = document.getElementById('machineSelect').value || '';
+            currentMachineId = document.getElementById('machineIdSelect').value || '';
+            currentJobId = document.getElementById('jobIdSelect').value || '';
+
+            document.getElementById('cameraSiteDisplay').textContent = currentSite || '(無)';
+            document.getElementById('cameraMachineDisplay').textContent = currentMachine || '(無)';
+            document.getElementById('cameraMachineIdDisplay').textContent = currentMachineId || '(無)';
+            document.getElementById('cameraJobIdDisplay').textContent = currentJobId || '(無)';
+
+            showPage('camera');
+        };
+
+        let cameraStream = null;
+        const video = document.getElementById('cameraFeed');
+        const canvas = document.getElementById('cameraCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function stopCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+                video.srcObject = null;
+            }
+        }
+
+        window.startCamera = function() {
+            stopCamera();
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    cameraStream = stream;
+                    video.srcObject = stream;
+                    video.play();
+                })
+                .catch(err => alert('無法開啟相機: ' + err.message));
+        };
+
+        window.capturePhoto = function() {
+            if (!cameraStream) { alert('請先開啟鏡頭。'); return; }
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            localStorage.setItem('capturedPhoto', dataUrl);
+            
+            document.getElementById('confirmPhotoPreview').src = dataUrl;
+            document.getElementById('confirmSiteDisplay').textContent = currentSite || '(無)';
+            document.getElementById('confirmMachineDisplay').textContent = currentMachine || '(無)';
+            document.getElementById('confirmMachineIdDisplay').textContent = currentMachineId || '(無)';
+            document.getElementById('confirmJobIdDisplay').textContent = currentJobId || '(無)';
+
+            showPage('confirm');
+        };
+
+        window.confirmAndUploadPhoto = async function() {
+            const dataUrl = localStorage.getItem('capturedPhoto');
+            if (!dataUrl) { alert('未找到預覽相片。'); return; }
+
+            const timestamp = new Date().toISOString();
+            let isSynced = false;
+            let fileUrl = '';
+
+            try {
+                const res = await sendToGAS({
+                    action: 'uploadPhoto',
+                    site: currentSite,
+                    machine: currentMachine,
+                    machineId: currentMachineId,
+                    jobId: currentJobId,
+                    photoBase64: dataUrl,
+                    timestamp: timestamp
+                });
+
+                if (res.status === 'success') {
+                    isSynced = true;
+                    fileUrl = res.photoUrl || '';
+                    alert('✅ 相片已成功上傳至雲端！');
+                } else {
+                    throw new Error(res.message || '伺服器錯誤');
+                }
+            } catch (err) {
+                console.warn('網絡不可用，已儲存至 IndexedDB。', err);
+                alert('⚠️ 網絡離線：已儲存至本地 IndexedDB 數據庫。可稍後於設定頁面進行同步。');
+            }
+
+            await addRecord(STORES.photos, {
+                site: currentSite,
+                machine: currentMachine,
+                machineId: currentMachineId,
+                jobId: currentJobId,
+                photoBase64: dataUrl,
+                photoUrl: fileUrl,
+                timestamp: timestamp,
+                synced: isSynced
+            });
+
+            localStorage.removeItem('capturedPhoto');
+            refreshPhotoLibrary();
+            showPage('data');
+        };
+
+        window.uploadPhoto = function() {
+            document.getElementById('fileInput').click();
+        };
+
+        window.handleFileUpload = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const dataUrl = e.target.result;
+                localStorage.setItem('capturedPhoto', dataUrl);
+                document.getElementById('confirmSiteDisplay').textContent = currentSite || '(無)';
+                document.getElementById('confirmMachineDisplay').textContent = currentMachine || '(無)';
+                document.getElementById('confirmMachineIdDisplay').textContent = currentMachineId || '(無)';
+                document.getElementById('confirmJobIdDisplay').textContent = currentJobId || '(無)';
+                document.getElementById('confirmPhotoPreview').src = dataUrl;
+                showPage('confirm');
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        };
+
+        async function refreshPhotoLibrary() {
+            const grid = document.getElementById('photoGrid');
+            const emptyMsg = document.getElementById('libraryEmpty');
+            grid.innerHTML = '';
+
+            const photos = await getAllRecords(STORES.photos);
+            if (!photos || photos.length === 0) {
+                emptyMsg.style.display = 'block';
+                return;
+            }
+            emptyMsg.style.display = 'none';
+            photos.forEach(photo => {
+                const div = document.createElement('div');
+                div.className = 'thumb';
+                const img = document.createElement('img');
+                img.src = photo.photoUrl || photo.photoBase64 || '';
+                
+                div.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    if (confirm('確定要在本地刪除此相片嗎？')) {
+                        deleteRecord(STORES.photos, photo.id)
+                            .then(() => refreshPhotoLibrary())
+                            .catch(err => alert('刪除失敗: ' + err.message));
+                    }
+                });
+
+                div.appendChild(img);
+                const badge = document.createElement('div');
+                badge.className = 'info-badge';
+                badge.textContent = (photo.site || '無地點') + ' | ' + (photo.machine || '無機器');
+                div.appendChild(badge);
+                grid.appendChild(div);
+            });
+        }
+
+        async function refreshDataSheet() {
+            document.getElementById('dataSheetSite').textContent = currentSite || '(無)';
+            document.getElementById('dataSheetMachine').textContent = currentMachine || '(無)';
+            document.getElementById('dataSheetMachineId').textContent = currentMachineId || '(無)';
+            document.getElementById('dataSheetJobId').textContent = currentJobId || '(無)';
+
+            const recordContainer = document.getElementById('maintenanceRecordList');
+            recordContainer.innerHTML = '';
+
+            const photos = await getAllRecords(STORES.photos);
+
+            if (!photos || photos.length === 0) {
+                recordContainer.innerHTML = '<p style="color:#6b7280; font-size:13px; text-align:center;">暫無本地維護紀錄</p>';
+                return;
+            }
+
+            photos.slice().reverse().forEach(record => {
+                const card = document.createElement('div');
+                card.className = 'record';
+
+                const syncBadge = record.synced 
+                    ? '<span style="color:#10b981; font-weight:bold;">[ 已同步 ☁️ ]</span>' 
+                    : '<span style="color:#ef4444; font-weight:bold;">[ 未同步 ⚠️ 點擊同步 ]</span>';
+
+                const dateObj = record.timestamp ? new Date(record.timestamp) : new Date();
+                const formattedDate = dateObj.toLocaleDateString();
+                const formattedTime = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                card.innerHTML = `
+                    <div><strong>${record.site || '未指定地點'}</strong> - ${record.machine || '未指定機器'} ${syncBadge}</div>
+                    <div style="font-size:12px; color:#4b5563;">機器ID: ${record.machineId || '無'} | 工作單ID: ${record.jobId || '無'}</div>
+                    <div class="meta">📅 ${formattedDate} · 🕒 ${formattedTime}</div>
+                `;
+
+                card.onclick = () => syncSingleRecord(record);
+                recordContainer.appendChild(card);
+            });
+        }
+
+        async function syncSingleRecord(record) {
+            if (record.synced) {
+                alert('ℹ️ 此紀錄已上傳至雲端。');
+                return;
+            }
+
+            if (!confirm(`確定要同步此紀錄？\n地點: ${record.site || '無'}\n機器: ${record.machine || '無'}`)) return;
+
+            try {
+                const res = await sendToGAS({
+                    action: 'uploadPhoto',
+                    site: record.site,
+                    machine: record.machine,
+                    machineId: record.machineId,
+                    jobId: record.jobId,
+                    photoBase64: record.photoBase64,
+                    timestamp: record.timestamp
+                });
+
+                if (res.status === 'success') {
+                    record.synced = true;
+                    record.photoUrl = res.photoUrl || '';
+
+                    const tx = db.transaction(STORES.photos, 'readwrite');
+                    await tx.objectStore(STORES.photos).put(record);
+
+                    alert('✅ 紀錄同步成功！');
+                    refreshDataSheet();
+                    refreshPhotoLibrary();
+                } else {
+                    throw new Error(res.message || '伺服器錯誤');
+                }
+            } catch (err) {
+                console.error('單項同步失敗:', err);
+                alert('❌ 同步失敗，請檢查網絡連線。');
+            }
+        }
+
+        window.syncAllToCloud = async function() {
+            const photos = await getAllRecords(STORES.photos);
+            const unsyncedPhotos = photos.filter(p => !p.synced);
+
+            if (unsyncedPhotos.length === 0) {
+                alert('所有本地紀錄均已同步！');
+                return;
+            }
+
+            try {
+                const res = await sendToGAS({
+                    action: 'batchSync',
+                    records: unsyncedPhotos.map(p => ({
+                        site: p.site,
+                        machine: p.machine,
+                        machineId: p.machineId,
+                        jobId: p.jobId,
+                        photoBase64: p.photoBase64,
+                        timestamp: p.timestamp
+                    }))
+                });
+
+                if (res.status === 'success') {
+                    const tx = db.transaction(STORES.photos, 'readwrite');
+                    const store = tx.objectStore(STORES.photos);
+                    unsyncedPhotos.forEach(p => {
+                        p.synced = true;
+                        store.put(p);
+                    });
+                    alert('☁️ 批次同步完成！');
+                    refreshPhotoLibrary();
+                    refreshDataSheet();
+                } else {
+                    alert('同步失敗: ' + res.message);
+                }
+            } catch (err) {
+                console.error('批次同步錯誤:', err);
+                alert('網絡錯誤，同步失敗。');
+            }
+        };
+
+        window.clearAllData = function() {
+            const inputEl = document.getElementById('clearConfirmInput');
+            if (!inputEl || inputEl.value.trim() !== '/clear-all') {
+                alert('❌ 請輸入 "/clear-all" 以確認刪除。');
+                return;
+            }
+
+            if (!confirm('⚠️ 確定要刪除所有本地數據？')) return;
+
+            Promise.all([
+                clearStore(STORES.sites),
+                clearStore(STORES.machines),
+                clearStore(STORES.machineIds),
+                clearStore(STORES.jobIds),
+                clearStore(STORES.photos)
+            ])
+            .then(async () => {
+                alert('✅ 所有本地數據已清除。');
+                inputEl.value = '';
+                await seedDefaultData();
+                refreshServiceSelects();
+                refreshPhotoLibrary();
+                refreshDataSheet();
+            })
+            .catch(err => alert('❌ 清除失敗: ' + err.message));
+        };
+
+        function updateNetworkStatus() {
+            const badge = document.getElementById('networkStatus');
+            if (navigator.onLine) {
+                badge.textContent = '🌐 線上';
+                badge.className = 'status-badge status-online';
+            } else {
+                badge.textContent = '📡 離線';
+                badge.className = 'status-badge status-offline';
+            }
+        }
+
+        window.addEventListener('online', updateNetworkStatus);
+        window.addEventListener('offline', updateNetworkStatus);
+
+        openDB()
+            .then(() => {
+                updateNetworkStatus();
+                refreshServiceSelects();
+                refreshPhotoLibrary();
+                refreshDataSheet();
+            })
+            .catch(err => console.error('數據庫初始化失敗:', err));
+
+    })();
+</script>
+</body>
+</html>
